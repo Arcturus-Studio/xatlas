@@ -121,7 +121,7 @@ Copyright (c) 2012 Brandon Pelfrey
 
 #define XA_MERGE_CHARTS 1
 #define XA_MERGE_CHARTS_MIN_NORMAL_DEVIATION 0.5f
-#define XA_RECOMPUTE_CHARTS 1
+#define XA_RECOMPUTE_CHARTS 0
 #define XA_CHECK_PARAM_WINDING 0
 #define XA_CHECK_PIECEWISE_CHART_QUALITY 0
 #define XA_CHECK_T_JUNCTIONS 0
@@ -7431,61 +7431,65 @@ static void runCreateAndParameterizeChartTask(void *groupUserData, void *taskUse
 	XA_PROFILE_START(parameterizeCharts)
 	args->chart->parameterize(*groupArgs->options, groupArgs->boundaryGrid->get());
 	XA_PROFILE_END(parameterizeCharts)
-#if XA_RECOMPUTE_CHARTS
-	if (!args->chart->isInvalid()) {
-		XA_PROFILE_END(createChartMeshAndParameterizeThread)
-		return;
-	}
-	// Recompute charts with invalid parameterizations.
-	XA_PROFILE_START(parameterizeChartsRecompute)
-	Chart *invalidChart = args->chart;
-	const Mesh *invalidMesh = invalidChart->unifiedMesh();
-	PiecewiseParam &pp = groupArgs->pp->get();
-	pp.reset(invalidMesh);
-#if XA_DEBUG_EXPORT_OBJ_RECOMPUTED_CHARTS
-	char filename[256];
-	XA_SPRINTF(filename, sizeof(filename), "debug_mesh_%03u_chartgroup_%03u_chart_%03u_recomputed.obj", args->mesh->id(), args->chartGroupId, args->chartId);
-	FILE *file;
-	XA_FOPEN(file, filename, "w");
-	uint32_t subChartIndex = 0;
-#endif
-	for (;;) {
-		XA_PROFILE_START(parameterizeChartsPiecewise)
-		const bool facesRemaining = pp.computeChart();
-		XA_PROFILE_END(parameterizeChartsPiecewise)
-		if (!facesRemaining)
-			break;
-		Chart *chart = XA_NEW_ARGS(MemTag::Default, Chart, groupArgs->chartBuffers->get(), invalidChart, invalidMesh, pp.chartFaces(), pp.texcoords(), args->mesh);
-#if XA_CHECK_PIECEWISE_CHART_QUALITY
-		chart->evaluateQuality(args->boundaryGrid->get());
-#endif
-		args->charts.push_back(chart);
-#if XA_DEBUG_EXPORT_OBJ_RECOMPUTED_CHARTS
-		if (file) {
-			for (uint32_t j = 0; j < invalidMesh->vertexCount(); j++) {
-				fprintf(file, "v %g %g %g\n", invalidMesh->position(j).x, invalidMesh->position(j).y, invalidMesh->position(j).z);
-				fprintf(file, "vt %g %g\n", pp.texcoords()[j].x, pp.texcoords()[j].y);
-			}
-			fprintf(file, "o chart%03u\n", subChartIndex);
-			fprintf(file, "s off\n");
-			for (uint32_t f = 0; f < pp.chartFaces().length; f++) {
-				fprintf(file, "f ");
-				const uint32_t face = pp.chartFaces()[f];
-				for (uint32_t j = 0; j < 3; j++) {
-					const uint32_t index = invalidMesh->vertexCount() * subChartIndex + invalidMesh->vertexAt(face * 3 + j) + 1; // 1-indexed
-					fprintf(file, "%d/%d/%c", index, index, j == 2 ? '\n' : ' ');
+
+	//#if XA_RECOMPUTE_CHARTS
+	if (groupArgs->options->recomputeCharts)
+	{
+		if (!args->chart->isInvalid()) {
+			XA_PROFILE_END(createChartMeshAndParameterizeThread)
+				return;
+		}
+		// Recompute charts with invalid parameterizations.
+		XA_PROFILE_START(parameterizeChartsRecompute)
+			Chart* invalidChart = args->chart;
+		const Mesh* invalidMesh = invalidChart->unifiedMesh();
+		PiecewiseParam& pp = groupArgs->pp->get();
+		pp.reset(invalidMesh);
+	#if XA_DEBUG_EXPORT_OBJ_RECOMPUTED_CHARTS
+		char filename[256];
+		XA_SPRINTF(filename, sizeof(filename), "debug_mesh_%03u_chartgroup_%03u_chart_%03u_recomputed.obj", args->mesh->id(), args->chartGroupId, args->chartId);
+		FILE* file;
+		XA_FOPEN(file, filename, "w");
+		uint32_t subChartIndex = 0;
+	#endif
+		for (;;) {
+			XA_PROFILE_START(parameterizeChartsPiecewise)
+				const bool facesRemaining = pp.computeChart();
+			XA_PROFILE_END(parameterizeChartsPiecewise)
+				if (!facesRemaining)
+					break;
+			Chart* chart = XA_NEW_ARGS(MemTag::Default, Chart, groupArgs->chartBuffers->get(), invalidChart, invalidMesh, pp.chartFaces(), pp.texcoords(), args->mesh);
+	#if XA_CHECK_PIECEWISE_CHART_QUALITY
+			chart->evaluateQuality(args->boundaryGrid->get());
+	#endif
+			args->charts.push_back(chart);
+	#if XA_DEBUG_EXPORT_OBJ_RECOMPUTED_CHARTS
+			if (file) {
+				for (uint32_t j = 0; j < invalidMesh->vertexCount(); j++) {
+					fprintf(file, "v %g %g %g\n", invalidMesh->position(j).x, invalidMesh->position(j).y, invalidMesh->position(j).z);
+					fprintf(file, "vt %g %g\n", pp.texcoords()[j].x, pp.texcoords()[j].y);
+				}
+				fprintf(file, "o chart%03u\n", subChartIndex);
+				fprintf(file, "s off\n");
+				for (uint32_t f = 0; f < pp.chartFaces().length; f++) {
+					fprintf(file, "f ");
+					const uint32_t face = pp.chartFaces()[f];
+					for (uint32_t j = 0; j < 3; j++) {
+						const uint32_t index = invalidMesh->vertexCount() * subChartIndex + invalidMesh->vertexAt(face * 3 + j) + 1; // 1-indexed
+						fprintf(file, "%d/%d/%c", index, index, j == 2 ? '\n' : ' ');
+					}
 				}
 			}
+			subChartIndex++;
+	#endif
 		}
-		subChartIndex++;
-#endif
-	}
-#if XA_DEBUG_EXPORT_OBJ_RECOMPUTED_CHARTS
-	if (file)
-		fclose(file);
-#endif
-	XA_PROFILE_END(parameterizeChartsRecompute)
-#endif // XA_RECOMPUTE_CHARTS
+	#if XA_DEBUG_EXPORT_OBJ_RECOMPUTED_CHARTS
+		if (file)
+			fclose(file);
+	#endif
+		XA_PROFILE_END(parameterizeChartsRecompute)
+	} // #endif
+
 	XA_PROFILE_END(createChartMeshAndParameterizeThread)
 	// Update progress.
 	groupArgs->progress->increment(args->faces.length);
@@ -7511,7 +7515,7 @@ public:
 	Chart *chartAt(uint32_t i) const { return m_charts[i]; }
 	uint32_t faceCount() const { return m_sourceMeshFaceGroups->faceCount(m_faceGroup); }
 
-	void computeCharts(TaskScheduler *taskScheduler, const ChartOptions &options, Progress *progress, segment::Atlas &atlas, ThreadLocal<UniformGrid2> *boundaryGrid, ThreadLocal<ChartCtorBuffers> *chartBuffers, ThreadLocal<PiecewiseParam> *piecewiseParam)
+	void computeCharts(TaskScheduler* taskScheduler, const ChartOptions& options, Progress* progress, segment::Atlas& atlas, ThreadLocal<UniformGrid2>* boundaryGrid, ThreadLocal<ChartCtorBuffers>* chartBuffers, ThreadLocal<PiecewiseParam>* piecewiseParam)
 	{
 		// This function may be called multiple times, so destroy existing charts.
 		for (uint32_t i = 0; i < m_charts.size(); i++) {
@@ -7520,11 +7524,11 @@ public:
 		}
 		// Create mesh from source mesh, using only the faces in this face group.
 		XA_PROFILE_START(createChartGroupMesh)
-		Mesh *mesh = createMesh();
+			Mesh* mesh = createMesh();
 		XA_PROFILE_END(createChartGroupMesh)
-		// Segment mesh into charts (arrays of faces).
+			// Segment mesh into charts (arrays of faces).
 #if XA_DEBUG_SINGLE_CHART
-		XA_UNUSED(options);
+			XA_UNUSED(options);
 		XA_UNUSED(atlas);
 		const uint32_t chartCount = 1;
 		uint32_t offset;
@@ -7540,16 +7544,16 @@ public:
 		mesh->~Mesh();
 		XA_FREE(mesh);
 #else
-		XA_PROFILE_START(buildAtlas)
-		atlas.reset(mesh, options);
+			XA_PROFILE_START(buildAtlas)
+			atlas.reset(mesh, options);
 		atlas.compute();
 		XA_PROFILE_END(buildAtlas)
-		// Update progress.
-		progress->increment(faceCount());
+			// Update progress.
+			progress->increment(faceCount());
 #if XA_DEBUG_EXPORT_OBJ_CHARTS
 		char filename[256];
 		XA_SPRINTF(filename, sizeof(filename), "debug_mesh_%03u_chartgroup_%03u_charts.obj", m_sourceMesh->id(), m_id);
-		FILE *file;
+		FILE* file;
 		XA_FOPEN(file, filename, "w");
 		if (file) {
 			mesh->writeObjVertices(file);
@@ -7569,8 +7573,8 @@ public:
 		mesh->~Mesh();
 		XA_FREE(mesh);
 		XA_PROFILE_START(copyChartFaces)
-		if (progress->cancel)
-			return;
+			if (progress->cancel)
+				return;
 		// Copy faces from segment::Atlas to m_chartFaces array with <chart 0 face count> <face 0> <face n> <chart 1 face count> etc. encoding.
 		// segment::Atlas faces refer to the chart group mesh. Map them to the input mesh instead.
 		const uint32_t chartCount = atlas.chartCount();
@@ -7585,8 +7589,8 @@ public:
 		}
 		XA_PROFILE_END(copyChartFaces)
 #endif
-		XA_PROFILE_START(createChartMeshAndParameterizeReal)
-		CreateAndParameterizeChartTaskGroupArgs groupArgs;
+			XA_PROFILE_START(createChartMeshAndParameterizeReal)
+			CreateAndParameterizeChartTaskGroupArgs groupArgs;
 		groupArgs.progress = progress;
 		groupArgs.boundaryGrid = boundaryGrid;
 		groupArgs.chartBuffers = chartBuffers;
@@ -7598,7 +7602,7 @@ public:
 		taskArgs.runCtors(); // Has Array member.
 		offset = 0;
 		for (uint32_t i = 0; i < chartCount; i++) {
-			CreateAndParameterizeChartTaskArgs &args = taskArgs[i];
+			CreateAndParameterizeChartTaskArgs& args = taskArgs[i];
 #if XA_DEBUG_SINGLE_CHART
 			args.basis = &chartBasis;
 			args.isPlanar = false;
@@ -7620,38 +7624,47 @@ public:
 		}
 		taskScheduler->wait(&taskGroup);
 		XA_PROFILE_END(createChartMeshAndParameterizeReal)
-#if XA_RECOMPUTE_CHARTS
-		// Count charts. Skip invalid ones and include new ones added by recomputing.
-		uint32_t newChartCount = 0;
-		for (uint32_t i = 0; i < chartCount; i++) {
-			if (taskArgs[i].chart->isInvalid())
-				newChartCount += taskArgs[i].charts.size();
-			else
-				newChartCount++;
-		}
-		m_charts.resize(newChartCount);
-		// Add valid charts first. Destroy invalid ones.
-		uint32_t current = 0;
-		for (uint32_t i = 0; i < chartCount; i++) {
-			Chart *chart = taskArgs[i].chart;
-			if (chart->isInvalid()) {
-				chart->~Chart();
-				XA_FREE(chart);
-				continue;
+
+		//#if XA_RECOMPUTE_CHARTS
+		if (options.recomputeCharts)
+		{
+			// Count charts. Skip invalid ones and include new ones added by recomputing.
+			uint32_t newChartCount = 0;
+			for (uint32_t i = 0; i < chartCount; i++) {
+				if (taskArgs[i].chart->isInvalid())
+					newChartCount += taskArgs[i].charts.size();
+				else
+					newChartCount++;
 			}
-			m_charts[current++] = chart;
+
+			m_charts.resize(newChartCount);
+			// Add valid charts first. Destroy invalid ones.
+			uint32_t current = 0;
+			for (uint32_t i = 0; i < chartCount; i++) {
+				Chart* chart = taskArgs[i].chart;
+				if (chart->isInvalid()) {
+					chart->~Chart();
+					XA_FREE(chart);
+					continue;
+				}
+				m_charts[current++] = chart;
+			}
+
+			// Now add new charts.
+			for (uint32_t i = 0; i < chartCount; i++) {
+				CreateAndParameterizeChartTaskArgs& args = taskArgs[i];
+				for (uint32_t j = 0; j < args.charts.size(); j++)
+					m_charts[current++] = args.charts[j];
+			}
+		//#else // XA_RECOMPUTE_CHARTS
+		} else 
+		{
+			m_charts.resize(chartCount);
+			for (uint32_t i = 0; i < chartCount; i++)
+				m_charts[i] = taskArgs[i].chart;
 		}
-		// Now add new charts.
-		for (uint32_t i = 0; i < chartCount; i++) {
-			CreateAndParameterizeChartTaskArgs &args = taskArgs[i];
-			for (uint32_t j = 0; j < args.charts.size(); j++)
-				m_charts[current++] = args.charts[j];
-		}
-#else // XA_RECOMPUTE_CHARTS
-		m_charts.resize(chartCount);
-		for (uint32_t i = 0; i < chartCount; i++)
-			m_charts[i] = taskArgs[i].chart;
-#endif // XA_RECOMPUTE_CHARTS
+
+		//#endif // XA_RECOMPUTE_CHARTS
 		taskArgs.runDtors(); // Has Array member.
 	}
 

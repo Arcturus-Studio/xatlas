@@ -189,6 +189,8 @@ struct ChartOptions
 
 	bool useInputMeshUvs = false; // Use MeshDecl::vertexUvData for charts.
 	bool fixWinding = false; // Enforce consistent texture coordinate winding.
+
+	bool recomputeCharts = true; // Results in fewer parameterization failures but more holes in charts.
 };
 
 // Call after all AddMesh calls. Can be called multiple times to recompute charts with different options.
